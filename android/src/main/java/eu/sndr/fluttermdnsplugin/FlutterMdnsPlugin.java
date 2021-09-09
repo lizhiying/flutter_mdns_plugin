@@ -48,10 +48,6 @@ public class FlutterMdnsPlugin implements FlutterPlugin, MethodCallHandler {
   private ServiceResolvedHandler mResolvedHandler;
   private ServiceLostHandler mLostHandler;
 
-  FlutterMdnsPlugin(PluginRegistry.Registrar r) {
-//    mRegistrar = r;
-  }
-
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
     binding = flutterPluginBinding;
