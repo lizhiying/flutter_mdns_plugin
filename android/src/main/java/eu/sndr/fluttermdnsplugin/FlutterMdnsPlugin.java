@@ -1,5 +1,7 @@
 package eu.sndr.fluttermdnsplugin;
 
+import androidx.annotation.NonNull;
+
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -16,70 +18,72 @@ import java.util.Collections;
 
 import eu.sndr.fluttermdnsplugin.handlers.DiscoveryRunningHandler;
 import eu.sndr.fluttermdnsplugin.handlers.ServiceDiscoveredHandler;
-import eu.sndr.fluttermdnsplugin.handlers.ServiceResolvedHandler;
 import eu.sndr.fluttermdnsplugin.handlers.ServiceLostHandler;
+import eu.sndr.fluttermdnsplugin.handlers.ServiceResolvedHandler;
+import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
-
-import static android.content.ContentValues.TAG;
+import io.flutter.plugin.common.PluginRegistry;
 
 /** FlutterMdnsPlugin */
-public class FlutterMdnsPlugin implements MethodCallHandler {
+public class FlutterMdnsPlugin implements FlutterPlugin, MethodCallHandler {
+  /// The MethodChannel that will the communication between Flutter and native Android
+  ///
+  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
+  /// when the Flutter Engine is detached from the Activity
+  private MethodChannel channel;
+  private FlutterPluginBinding binding;
 
   private final static String NAMESPACE = "eu.sndr.mdns";
-
   private NsdManager mNsdManager;
   private NsdManager.DiscoveryListener mDiscoveryListener;
   private ArrayList<NsdServiceInfo> mDiscoveredServices;
 
-  /** Plugin registration. */
-  public static void registerWith(Registrar registrar) {
-
-    final MethodChannel channel = new MethodChannel(registrar.messenger(), "flutter_mdns_plugin");
-    channel.setMethodCallHandler(new FlutterMdnsPlugin(registrar));
-
-  }
-
-  FlutterMdnsPlugin(Registrar r) {
-
-    mDiscoveredServices = new ArrayList<>();
-
-    EventChannel serviceDiscoveredChannel = new EventChannel(r.messenger(), NAMESPACE + "/discovered");
-    mDiscoveredHandler = new ServiceDiscoveredHandler();
-    serviceDiscoveredChannel.setStreamHandler(mDiscoveredHandler);
-
-    EventChannel serviceResolved = new EventChannel(r.messenger(), NAMESPACE + "/resolved");
-    mResolvedHandler = new ServiceResolvedHandler();
-    serviceResolved.setStreamHandler(mResolvedHandler);
-
-    EventChannel serviceLost = new EventChannel(r.messenger(), NAMESPACE + "/lost");
-    mLostHandler = new ServiceLostHandler();
-    serviceLost.setStreamHandler(mLostHandler);
-
-    EventChannel discoveryRunning = new EventChannel(r.messenger(), NAMESPACE + "/running");
-    mDiscoveryRunningHandler = new DiscoveryRunningHandler(r.activity());
-    discoveryRunning.setStreamHandler(mDiscoveryRunningHandler);
-
-    mRegistrar = r;
-
-  }
-
-  private Registrar mRegistrar;
+//  private PluginRegistry.Registrar mRegistrar;
   private DiscoveryRunningHandler mDiscoveryRunningHandler;
   private ServiceDiscoveredHandler mDiscoveredHandler;
   private ServiceResolvedHandler mResolvedHandler;
   private ServiceLostHandler mLostHandler;
 
-  @Override
-  public void onMethodCall(MethodCall call, Result result) {
+  FlutterMdnsPlugin(PluginRegistry.Registrar r) {
+//    mRegistrar = r;
+  }
 
+  @Override
+  public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
+    binding = flutterPluginBinding;
+
+    mDiscoveredServices = new ArrayList<>();
+
+    EventChannel serviceDiscoveredChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), NAMESPACE + "/discovered");
+    mDiscoveredHandler = new ServiceDiscoveredHandler();
+    serviceDiscoveredChannel.setStreamHandler(mDiscoveredHandler);
+
+    EventChannel serviceResolved = new EventChannel(flutterPluginBinding.getBinaryMessenger(), NAMESPACE + "/resolved");
+    mResolvedHandler = new ServiceResolvedHandler();
+    serviceResolved.setStreamHandler(mResolvedHandler);
+
+    EventChannel serviceLost = new EventChannel(flutterPluginBinding.getBinaryMessenger(), NAMESPACE + "/lost");
+    mLostHandler = new ServiceLostHandler();
+    serviceLost.setStreamHandler(mLostHandler);
+
+    EventChannel discoveryRunning = new EventChannel(flutterPluginBinding.getBinaryMessenger(), NAMESPACE + "/running");
+    mDiscoveryRunningHandler = new DiscoveryRunningHandler(flutterPluginBinding.getApplicationContext());
+    discoveryRunning.setStreamHandler(mDiscoveryRunningHandler);
+
+    channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "flutter_mdns_plugin");
+    channel.setMethodCallHandler(this);
+
+  }
+
+  @Override
+  public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
     switch (call.method) {
       case "startDiscovery":
-        startDiscovery(call.argument("serviceType"));
+        startDiscovery(call.argument("serviceType").toString());
         result.success(null);
         break;
       case "stopDiscovery" :
@@ -95,67 +99,71 @@ public class FlutterMdnsPlugin implements MethodCallHandler {
         result.notImplemented();
         break;
     }
+  }
 
+  @Override
+  public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+    channel.setMethodCallHandler(null);
   }
 
   @SuppressLint("NewApi")
   private void startDiscovery(String serviceName) {
 
-    mNsdManager = (NsdManager)mRegistrar.activity().getSystemService(Context.NSD_SERVICE);
+    mNsdManager = (NsdManager)binding.getApplicationContext().getSystemService(Context.NSD_SERVICE);
 
     mDiscoveryListener = new NsdManager.DiscoveryListener(){
 
       @Override
       public void onStartDiscoveryFailed(String serviceType, int errorCode) {
-        Log.e(TAG, String.format(Locale.US,
-                "Discovery failed to start on %s with error : %d", serviceType, errorCode));
+//        Log.e(TAG, String.format(Locale.US,
+//                "Discovery failed to start on %s with error : %d", serviceType, errorCode));
         mDiscoveryRunningHandler.onDiscoveryStopped();
       }
 
       @Override
       public void onStopDiscoveryFailed(String serviceType, int errorCode) {
-        Log.e(TAG, String.format(Locale.US,
-                "Discovery failed to stop on %s with error : %d", serviceType, errorCode));
+//        Log.e(TAG, String.format(Locale.US,
+//                "Discovery failed to stop on %s with error : %d", serviceType, errorCode));
         mDiscoveryRunningHandler.onDiscoveryStarted();
       }
 
       @Override
       public void onDiscoveryStarted(String serviceType) {
-        Log.d(TAG, "Started discovery for : " + serviceType);
+//        Log.d(TAG, "Started discovery for : " + serviceType);
         mDiscoveryRunningHandler.onDiscoveryStarted();
       }
 
       @Override
       public void onDiscoveryStopped(String serviceType) {
-        Log.d(TAG, "Stopped discovery for : " + serviceType);
+//        Log.d(TAG, "Stopped discovery for : " + serviceType);
         mDiscoveryRunningHandler.onDiscoveryStopped();
       }
 
       @Override
       public void onServiceFound(NsdServiceInfo nsdServiceInfo) {
-        Log.d(TAG, "Found Service : " + nsdServiceInfo.toString());
+//        Log.d(TAG, "Found Service : " + nsdServiceInfo.toString());
         mDiscoveredServices.add(nsdServiceInfo);
         mDiscoveredHandler.onServiceDiscovered(ServiceToMap(nsdServiceInfo));
 
         mNsdManager.resolveService(nsdServiceInfo, new NsdManager.ResolveListener() {
           @Override
           public void onResolveFailed(NsdServiceInfo nsdServiceInfo, int errorCode) {
-            Log.d(TAG, "Failed to resolve service : " + nsdServiceInfo.toString());
+//            Log.d(TAG, "Failed to resolve service : " + nsdServiceInfo.toString());
 
             switch (errorCode) {
               case NsdManager.FAILURE_ALREADY_ACTIVE:
-                  Log.e(TAG, "FAILURE_ALREADY_ACTIVE");
-                  // Just try again...
-                  onServiceFound(nsdServiceInfo);
-                  break;
+//                  Log.e(TAG, "FAILURE_ALREADY_ACTIVE");
+                // Just try again...
+                onServiceFound(nsdServiceInfo);
+                break;
               case NsdManager.FAILURE_INTERNAL_ERROR:
-                  Log.e(TAG, "FAILURE_INTERNAL_ERROR");
-                  break;
+//                  Log.e(TAG, "FAILURE_INTERNAL_ERROR");
+                break;
               case NsdManager.FAILURE_MAX_LIMIT:
-                  Log.e(TAG, "FAILURE_MAX_LIMIT");
-                  // https://stackoverflow.com/questions/16736142/nsnetworkmanager-resolvelistener-messages-android
-                  onServiceFound(nsdServiceInfo);
-                  break;
+//                  Log.e(TAG, "FAILURE_MAX_LIMIT");
+                // https://stackoverflow.com/questions/16736142/nsnetworkmanager-resolvelistener-messages-android
+                onServiceFound(nsdServiceInfo);
+                break;
             }
           }
 
@@ -168,7 +176,7 @@ public class FlutterMdnsPlugin implements MethodCallHandler {
 
       @Override
       public void onServiceLost(NsdServiceInfo nsdServiceInfo) {
-        Log.d(TAG, "Lost Service : " + nsdServiceInfo.toString());
+//        Log.d(TAG, "Lost Service : " + nsdServiceInfo.toString());
         mLostHandler.onServiceLost(ServiceToMap(nsdServiceInfo));
       }
     };
@@ -209,5 +217,4 @@ public class FlutterMdnsPlugin implements MethodCallHandler {
 
     return map;
   }
-
 }
